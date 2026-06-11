@@ -2,6 +2,9 @@
   "functions": {
     "api/fathom-webhook.js": {
       "maxDuration": 60
+    },
+    "api/backfill.js": {
+      "maxDuration": 300
     }
   }
 }

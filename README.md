@@ -66,3 +66,44 @@ Record a 2-minute test meeting in Fathom. Within a minute or two of ending it, t
 - **Long calls:** transcript is truncated to ~60k chars before sending to Claude; raise it in `extractWithClaude` if your calls run very long, but watch token cost.
 - **Model:** currently `claude-sonnet-4-6`. Swap in the extraction call if you want a cheaper/faster one.
 - **Serverless timeout:** extraction usually finishes well under Vercel's default. If you hit timeouts on long transcripts, bump `maxDuration` in `vercel.json` (Pro plans allow longer).
+
+---
+
+## Backfill — process existing/past calls on demand
+
+The webhook only fires on *new* calls. To run summaries for calls that already happened (or to test against real data), use the **backfill** endpoint.
+
+### Extra env vars it needs
+
+| Variable | What it is |
+|---|---|
+| `FATHOM_API_KEY` | Your Fathom API key — User Settings → API Access. (This is the *read* key, different from the webhook signing secret.) |
+| `BACKFILL_KEY` | A password you make up. You include it in the URL so randoms can't trigger backfills. E.g. `mysecret123`. |
+
+Add both in Vercel → Settings → Environment Variables, then redeploy.
+
+### How to run it
+
+Just visit a URL in your browser (or paste it into a new tab):
+
+```
+https://<your-project>.vercel.app/api/backfill?key=YOUR_BACKFILL_KEY&limit=3
+```
+
+- `key` — must match your `BACKFILL_KEY`
+- `limit` — how many recent calls to process (default 3, max 25)
+
+**Recommended first run — dry run (lists calls, posts nothing):**
+```
+https://<your-project>.vercel.app/api/backfill?key=YOUR_BACKFILL_KEY&limit=3&dry=1
+```
+This shows you which calls it found (titles, who recorded them, whether a transcript exists) without touching Discord. Once it looks right, drop `&dry=1` to actually post them.
+
+**Only one closer's calls:**
+```
+https://<your-project>.vercel.app/api/backfill?key=YOUR_BACKFILL_KEY&limit=5&recorded_by=closer@yourcompany.com
+```
+
+The page returns a small JSON report of what it processed; the actual summaries land in Discord.
+
+> Tip for testing the whole setup: run the dry run first, then a real backfill with `limit=1`. If that one call shows up in Discord correctly, your entire pipeline works — and the live webhook (which shares the exact same code) will too.
