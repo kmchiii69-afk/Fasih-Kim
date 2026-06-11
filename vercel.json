@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/fathom-webhook.js": {
+      "maxDuration": 60
+    }
+  }
+}

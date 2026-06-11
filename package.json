@@ -1,0 +1,7 @@
+{
+  "name": "fathom-discord-bot",
+  "version": "1.0.0",
+  "description": "Fathom sales-call webhook -> Claude extraction -> Discord summary",
+  "type": "module",
+  "private": true
+}
