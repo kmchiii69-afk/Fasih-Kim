@@ -15,7 +15,7 @@
 //   FATHOM_API_KEY   your Fathom API key (User Settings -> API Access)
 //   BACKFILL_KEY     any password you make up; you pass it in the URL
 
-import { processMeeting } from "./_lib.js";
+import { processMeeting, shouldSkipMeeting } from "./_lib.js";
 
 const FATHOM_BASE = "https://api.fathom.ai/external/v1";
 
@@ -78,6 +78,7 @@ export default async function handler(req, res) {
           recorded_by: m.recorded_by?.name,
           started: m.recording_start_time,
           has_transcript: Array.isArray(m.transcript) && m.transcript.length > 0,
+          will_skip: shouldSkipMeeting(m) ? "FILTERED OUT (internal/group)" : false,
         })),
       });
     }
@@ -87,6 +88,14 @@ export default async function handler(req, res) {
     for (const m of meetings) {
       try {
         const extracted = await processMeeting(m);
+        if (extracted.skipped) {
+          results.push({
+            recording_id: m.recording_id,
+            skipped: true,
+            title: m.meeting_title || m.title,
+          });
+          continue;
+        }
         results.push({
           recording_id: m.recording_id,
           ok: true,
@@ -104,7 +113,8 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       ok: true,
-      processed: results.length,
+      processed: results.filter((r) => r.ok).length,
+      skipped: results.filter((r) => r.skipped).length,
       results,
     });
   } catch (err) {

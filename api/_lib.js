@@ -15,6 +15,28 @@ try {
 }
 
 
+// ---------- meeting filter ----------
+
+// Meetings whose title contains any of these phrases are skipped entirely
+// (internal calls, huddles, group sessions). Case-insensitive substring match.
+// Edit this list to change what gets filtered out.
+const EXCLUDED_TITLE_PHRASES = [
+  "internal huddle",
+  "team call",
+  "team meeting",
+  "group call",
+  "mastermind",
+];
+
+// Returns true if this meeting should be SKIPPED (not posted to Discord).
+export function shouldSkipMeeting(payload) {
+  const title =
+    payload.meeting_title || payload.title || payload.recording?.title || "";
+  const lower = title.toLowerCase();
+  return EXCLUDED_TITLE_PHRASES.some((phrase) => lower.includes(phrase));
+}
+
+
 // ---------- transcript -> text ----------
 
 export function transcriptToText(payload) {
@@ -76,6 +98,10 @@ export function contextHints(payload) {
     }));
   }
 
+  // Shareable Fathom recording link, preferring the public share URL.
+  hints.share_url =
+    payload.share_url || payload.url || payload.recording?.url || null;
+
   return hints;
 }
 
@@ -115,6 +141,18 @@ export async function extractWithClaude(transcriptText, hints) {
     "point range, and if a factor was never discussed set it to null and list it " +
     "in missing_factors (do not guess, do not count it as zero). The total is the " +
     "sum of the factors you DID score. " +
+    "OUTCOME — read the ENTIRE transcript for close signals, not just the ending. " +
+    "Many calls close mid-conversation and the recording keeps going. Mark CLOSED " +
+    "if ANY of these happen anywhere in the call: the prospect agrees to buy or " +
+    "join; payment is taken or card/billing details are collected; a payment plan " +
+    "is agreed; the closer says things like 'welcome aboard', 'let's get you " +
+    "started', 'I'll send the onboarding', or confirms next steps that only happen " +
+    "after a sale; the prospect says yes/I'm in/let's do it. Do NOT default to " +
+    "NO_CLOSE just because the transcript lacks a tidy closing line or cuts off. " +
+    "Use NO_CLOSE only when the prospect clearly declines or no agreement is " +
+    "reached. Use FOLLOW_UP when they want time to decide or a second call is set. " +
+    "Use NO_SHOW only if the prospect never joined. If genuinely ambiguous, prefer " +
+    "FOLLOW_UP over NO_CLOSE. " +
     "Respond with ONLY a single valid JSON object, no markdown, no preamble.";
 
   const userContent =
@@ -231,18 +269,23 @@ export function buildDiscordPayload(d, hints) {
     });
   }
 
-  return {
-    embeds: [
-      {
-        title: `${outcomeEmoji} Sales Call — ${d.lead_name || "Unknown Lead"}`,
-        description: (d.summary || "").slice(0, 4000),
-        color,
-        fields,
-        footer: { text: hints.meeting_title || "Fathom call summary" },
-        timestamp: new Date().toISOString(),
-      },
-    ],
+  const watchLine = hints.share_url
+    ? `\n\n🎥 [Watch the call](${hints.share_url})`
+    : "";
+
+  const embed = {
+    title: `${outcomeEmoji} Sales Call — ${d.lead_name || "Unknown Lead"}`,
+    description: (d.summary || "").slice(0, 3900) + watchLine,
+    color,
+    fields,
+    footer: { text: hints.meeting_title || "Fathom call summary" },
+    timestamp: new Date().toISOString(),
   };
+
+  // Makes the embed title itself a clickable link to the recording.
+  if (hints.share_url) embed.url = hints.share_url;
+
+  return { embeds: [embed] };
 }
 
 export async function postToDiscord(payload) {
@@ -257,7 +300,11 @@ export async function postToDiscord(payload) {
 }
 
 // Process one Fathom meeting object end-to-end: extract + post to Discord.
+// Returns { skipped: true } if the meeting was filtered out by title.
 export async function processMeeting(meeting) {
+  if (shouldSkipMeeting(meeting)) {
+    return { skipped: true };
+  }
   const transcriptText = transcriptToText(meeting);
   const hints = contextHints(meeting);
   const extracted = await extractWithClaude(transcriptText, hints);
