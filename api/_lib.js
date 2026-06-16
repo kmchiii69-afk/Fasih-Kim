@@ -22,18 +22,43 @@ try {
 // Edit this list to change what gets filtered out.
 const EXCLUDED_TITLE_PHRASES = [
   "internal huddle",
+  "sales huddle",
   "team call",
   "team meeting",
   "group call",
   "mastermind",
+  "gc executives call",
+  "fulfilment call",
 ];
+
+// Meetings where any of these emails appear (as a participant or the recorder)
+// are skipped, regardless of the title.
+const EXCLUDED_EMAILS = ["lazzartopalovic@gmail.com"];
 
 // Returns true if this meeting should be SKIPPED (not posted to Discord).
 export function shouldSkipMeeting(payload) {
   const title =
     payload.meeting_title || payload.title || payload.recording?.title || "";
   const lower = title.toLowerCase();
-  return EXCLUDED_TITLE_PHRASES.some((phrase) => lower.includes(phrase));
+  if (EXCLUDED_TITLE_PHRASES.some((phrase) => lower.includes(phrase))) {
+    return true;
+  }
+
+  // Collect every email associated with the meeting.
+  const emails = [];
+  const people =
+    payload.calendar_invitees || payload.invitees || payload.participants || [];
+  if (Array.isArray(people)) {
+    for (const p of people) if (p?.email) emails.push(p.email.toLowerCase());
+  }
+  const rec = payload.recorded_by;
+  if (rec) {
+    const recEmail = typeof rec === "string" ? rec : rec.email;
+    if (recEmail) emails.push(recEmail.toLowerCase());
+  }
+
+  const blocked = EXCLUDED_EMAILS.map((e) => e.toLowerCase());
+  return emails.some((e) => blocked.includes(e));
 }
 
 
