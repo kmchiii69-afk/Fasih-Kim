@@ -29,6 +29,7 @@ const EXCLUDED_TITLE_PHRASES = [
   "mastermind",
   "gc executives call",
   "fulfilment call",
+  "q&a",
 ];
 
 // Meetings where any of these emails appear (as a participant or the recorder)
