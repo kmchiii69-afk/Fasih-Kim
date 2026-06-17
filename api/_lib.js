@@ -34,7 +34,14 @@ const EXCLUDED_TITLE_PHRASES = [
 
 // Meetings where any of these emails appear (as a participant or the recorder)
 // are skipped, regardless of the title.
-const EXCLUDED_EMAILS = ["lazzartopalovic@gmail.com"];
+const EXCLUDED_EMAILS = [
+  "lazzartopalovic@gmail.com",
+  "soowei@gohconsulting.com",
+];
+
+// Meetings recorded by or involving these people (matched by name) are skipped.
+// Used for coaches/team whose calls aren't sales leads. Case-insensitive.
+const EXCLUDED_NAMES = ["soowei goh"];
 
 // Returns true if this meeting should be SKIPPED (not posted to Discord).
 export function shouldSkipMeeting(payload) {
@@ -45,21 +52,36 @@ export function shouldSkipMeeting(payload) {
     return true;
   }
 
-  // Collect every email associated with the meeting.
+  // Collect every email and name associated with the meeting.
   const emails = [];
+  const names = [];
   const people =
     payload.calendar_invitees || payload.invitees || payload.participants || [];
   if (Array.isArray(people)) {
-    for (const p of people) if (p?.email) emails.push(p.email.toLowerCase());
+    for (const p of people) {
+      if (p?.email) emails.push(p.email.toLowerCase());
+      if (p?.name) names.push(p.name.toLowerCase());
+    }
   }
   const rec = payload.recorded_by;
   if (rec) {
-    const recEmail = typeof rec === "string" ? rec : rec.email;
-    if (recEmail) emails.push(recEmail.toLowerCase());
+    if (typeof rec === "string") {
+      // could be a name or an email
+      if (rec.includes("@")) emails.push(rec.toLowerCase());
+      else names.push(rec.toLowerCase());
+    } else {
+      if (rec.email) emails.push(rec.email.toLowerCase());
+      if (rec.name) names.push(rec.name.toLowerCase());
+    }
   }
 
-  const blocked = EXCLUDED_EMAILS.map((e) => e.toLowerCase());
-  return emails.some((e) => blocked.includes(e));
+  const blockedEmails = EXCLUDED_EMAILS.map((e) => e.toLowerCase());
+  if (emails.some((e) => blockedEmails.includes(e))) return true;
+
+  const blockedNames = EXCLUDED_NAMES.map((n) => n.toLowerCase());
+  if (names.some((n) => blockedNames.some((b) => n.includes(b)))) return true;
+
+  return false;
 }
 
 
