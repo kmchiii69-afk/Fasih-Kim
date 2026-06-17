@@ -12,13 +12,26 @@ weight). The factor scores are added together for a total out of 100.
 
 ### 1. Buying power / budget — max 30 points
 Can this lead realistically invest between $15,000 and $45,000+?
+- **OVERRIDE: If the prospect actually PAID on the call (full payment, deposit, or
+  a substantial split/first payment), that is the strongest possible proof of
+  budget. Score 27–30 regardless of any earlier hesitation, cash-flow worries, or
+  payment friction. Someone who just paid $7,500 on the call has clearly
+  demonstrated budget — do not score them mid-band because they expressed concern
+  about timing or preferred paying in full.**
 - Clear ability and willingness to invest $30k+ → 25–30
 - Can do $15k–$30k, or willing but stretching → 15–24
 - Budget is shaky, hesitant, or below $15k → 5–14
 - Clearly cannot afford / not willing at this level → 0–4
+- Note: logistical friction (card declined, moving expenses, money tied up in
+  investments, preferring a split) is NOT the same as lacking budget. Judge actual
+  capacity and demonstrated willingness, not temporary cash-flow logistics.
 
 ### 2. Income level — max 25 points
 Monthly income / business revenue. Qualified ICP is making $30k/mo or more.
+Convert any non-USD figure to USD before banding (e.g. £20–30k/mo ≈ $27–40k/mo).
+Do NOT penalize a figure just because it was stated approximately or as a range —
+use the midpoint. A clearly stated revenue at or above the threshold scores in the
+top band even if phrased casually.
 - $30k/mo+ clearly established → 20–25
 - $15k–$30k/mo → 12–19
 - $5k–$15k/mo → 5–11
