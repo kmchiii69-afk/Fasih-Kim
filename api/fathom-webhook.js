@@ -8,10 +8,30 @@
 //   DISCORD_WEBHOOK_URL     https://discord.com/api/webhooks/...
 
 import crypto from "crypto";
-import { processMeeting, postToDiscord } from "./_lib.js";
+import { processMeeting, postToDiscord, fetchMeetingById } from "./_lib.js";
 
 // We need the RAW body for signature verification, so disable Vercel's parser.
 export const config = { api: { bodyParser: false } };
+
+// In-memory dedupe: remembers recording ids this warm instance has already
+// handled, so a Fathom retry (which arrives within seconds/minutes) won't post
+// a second time. Entries expire after 30 min to keep the map small. This lives
+// in module scope, which persists across invocations while the instance is warm.
+const RECENTLY_HANDLED = new Map(); // recordingId -> timestamp(ms)
+const DEDUPE_TTL_MS = 30 * 60 * 1000;
+
+function alreadyHandled(recordingId) {
+  if (recordingId == null) return false;
+  const key = String(recordingId);
+  const now = Date.now();
+  // prune expired entries
+  for (const [k, ts] of RECENTLY_HANDLED) {
+    if (now - ts > DEDUPE_TTL_MS) RECENTLY_HANDLED.delete(k);
+  }
+  if (RECENTLY_HANDLED.has(key)) return true;
+  RECENTLY_HANDLED.set(key, now);
+  return false;
+}
 
 function readRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -81,8 +101,28 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Invalid JSON" });
   }
 
+  // Dedupe: if we've already handled this recording (e.g. Fathom retried the
+  // webhook because our response was slow), acknowledge and skip re-posting.
+  if (alreadyHandled(payload.recording_id)) {
+    return res.status(200).json({ ok: true, duplicate: true });
+  }
+
   try {
-    await processMeeting(payload);
+    // The inline webhook transcript can be incomplete if Fathom is still
+    // processing when it fires. Re-fetch the finalized meeting by recording id
+    // so we score the FULL transcript. Wait briefly first to let Fathom finish,
+    // then fall back to the inline payload if the fetch comes up empty.
+    let meeting = payload;
+    const recordingId = payload.recording_id;
+    if (recordingId && process.env.FATHOM_API_KEY) {
+      await new Promise((r) => setTimeout(r, 15000)); // 15s grace for processing
+      const fetched = await fetchMeetingById(recordingId);
+      if (fetched && Array.isArray(fetched.transcript) && fetched.transcript.length) {
+        meeting = fetched;
+      }
+    }
+
+    await processMeeting(meeting);
     return res.status(200).json({ ok: true });
   } catch (err) {
     console.error("Processing error:", err);

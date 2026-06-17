@@ -324,6 +324,39 @@ export async function postToDiscord(payload) {
   }
 }
 
+// Fetch the finalized meeting (full transcript + summary + CRM) from Fathom's
+// /meetings API by recording id. Used by the webhook because the inline webhook
+// transcript can be incomplete if Fathom is still processing when it fires.
+// Returns the meeting object, or null if it can't be found/fetched.
+export async function fetchMeetingById(recordingId) {
+  if (!recordingId || !process.env.FATHOM_API_KEY) return null;
+
+  const params = new URLSearchParams();
+  params.set("include_transcript", "true");
+  params.set("include_summary", "true");
+  params.set("include_crm_matches", "true");
+
+  // Page through recent meetings to find the matching recording id.
+  let cursor = null;
+  for (let i = 0; i < 5; i++) {
+    if (cursor) params.set("cursor", cursor);
+    const resp = await fetch(
+      `https://api.fathom.ai/external/v1/meetings?${params.toString()}`,
+      { headers: { "X-Api-Key": process.env.FATHOM_API_KEY } }
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const items = data.items || [];
+    const match = items.find(
+      (m) => String(m.recording_id) === String(recordingId)
+    );
+    if (match) return match;
+    cursor = data.next_cursor;
+    if (!cursor || items.length === 0) break;
+  }
+  return null;
+}
+
 // Process one Fathom meeting object end-to-end: extract + post to Discord.
 // Returns { skipped: true } if the meeting was filtered out by title.
 export async function processMeeting(meeting) {
