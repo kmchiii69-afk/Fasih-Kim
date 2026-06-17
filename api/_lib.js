@@ -137,9 +137,8 @@ const EXTRACTION_SCHEMA = `{
   "lead_name": "string | null",
   "lead_source": "string | null (where the lead came from, e.g. YouTube, Instagram, referral, paid ad, webinar)",
   "outcome": "one of: CLOSED | NO_CLOSE | FOLLOW_UP | NO_SHOW | UNKNOWN",
-  "cash_collected": "number | null (amount actually collected on the call, in the currency stated; null if none)",
-  "currency": "string | null (e.g. USD, MYR)",
-  "deal_value": "number | null (total contract / program price discussed)",
+  "cash_collected": "number | null (USD amount actually collected/charged on THIS call; if a payment plan, this is the first payment made on the call, not the full deal; null if no payment made)",
+  "deal_value": "number | null (USD total price of the deal actually agreed; if a split/payment plan was chosen, use the plan's total which may be higher than paid-in-full; null if no deal)",
   "icp_score": {
     "budget": "number | null (0-30, per criteria; null if not discussed)",
     "income": "number | null (0-25; null if not discussed)",
@@ -167,6 +166,19 @@ export async function extractWithClaude(transcriptText, hints) {
     "point range, and if a factor was never discussed set it to null and list it " +
     "in missing_factors (do not guess, do not count it as zero). The total is the " +
     "sum of the factors you DID score. " +
+    "MONEY — report ALL money figures in USD only. If amounts are discussed in " +
+    "another currency (GBP, EUR, MYR, etc.), convert to USD using an approximate " +
+    "current exchange rate. If the transcript states both the local and the USD " +
+    "figure (e.g. '$14k, that's £10.45k'), use the stated USD figure directly. " +
+    "DEAL STRUCTURE — analyze the pricing carefully before reporting. Calls often " +
+    "have a paid-in-full price AND a higher payment-plan/split total (splitting " +
+    "usually costs extra). Determine which option the prospect actually chose. If " +
+    "they chose a multi-payment split, deal_value is the SPLIT total (the higher " +
+    "number), and cash_collected is the FIRST payment actually made on the call " +
+    "(typically split total / number of payments), NOT the whole deal. Only count " +
+    "cash_collected if a payment was actually made on the call (card charged, " +
+    "transfer sent, etc.). Reason step by step through the numbers internally, then " +
+    "report the final USD figures. " +
     "OUTCOME — read the ENTIRE transcript for close signals, not just the ending. " +
     "Many calls close mid-conversation and the recording keeps going. Mark CLOSED " +
     "if ANY of these happen anywhere in the call: the prospect agrees to buy or " +
@@ -231,10 +243,9 @@ export async function extractWithClaude(transcriptText, hints) {
 
 // ---------- Discord ----------
 
-function fmtMoney(amount, currency) {
+function fmtMoney(amount) {
   if (amount == null) return "—";
-  const cur = currency || "";
-  return `${cur} ${Number(amount).toLocaleString()}`.trim();
+  return `$${Number(amount).toLocaleString()}`;
 }
 
 export function buildDiscordPayload(d, hints) {
@@ -283,8 +294,8 @@ export function buildDiscordPayload(d, hints) {
 
   const fields = [
     { name: "Outcome", value: `${outcomeEmoji} ${d.outcome || "UNKNOWN"}`, inline: true },
-    { name: "Cash Collected", value: fmtMoney(d.cash_collected, d.currency), inline: true },
-    { name: "Deal Value", value: fmtMoney(d.deal_value, d.currency), inline: true },
+    { name: "Cash Collected", value: fmtMoney(d.cash_collected), inline: true },
+    { name: "Deal Value", value: fmtMoney(d.deal_value), inline: true },
     { name: "Lead", value: d.lead_name || "—", inline: true },
     { name: "Lead Source", value: d.lead_source || "—", inline: true },
     {
