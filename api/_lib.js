@@ -181,11 +181,22 @@ export async function extractWithClaude(transcriptText, hints) {
     "FOLLOW_UP over NO_CLOSE. " +
     "Respond with ONLY a single valid JSON object, no markdown, no preamble.";
 
+  // The outcome (close/payment) usually happens at the END of a call, so if a
+  // transcript is too long to send whole, keep the LAST chunk, not the first.
+  // Limit is generous; Claude's context handles large transcripts fine.
+  const MAX_TRANSCRIPT_CHARS = 200000;
+  let tx = transcriptText;
+  if (tx.length > MAX_TRANSCRIPT_CHARS) {
+    tx =
+      "[earlier transcript truncated]\n" +
+      tx.slice(tx.length - MAX_TRANSCRIPT_CHARS);
+  }
+
   const userContent =
     `ICP SCORING CRITERIA:\n"""\n${ICP_CRITERIA}\n"""\n\n` +
     `Context hints (may be incomplete):\n${JSON.stringify(hints, null, 2)}\n\n` +
     `Return JSON matching exactly this schema:\n${EXTRACTION_SCHEMA}\n\n` +
-    `Transcript:\n"""\n${transcriptText.slice(0, 60000)}\n"""`;
+    `Transcript:\n"""\n${tx}\n"""`;
 
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
