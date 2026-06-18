@@ -30,6 +30,7 @@ const EXCLUDED_TITLE_PHRASES = [
   "gc executives call",
   "fulfilment call",
   "q&a",
+  "content call",
 ];
 
 // Meetings where any of these emails appear (as a participant or the recorder)
@@ -37,6 +38,7 @@ const EXCLUDED_TITLE_PHRASES = [
 const EXCLUDED_EMAILS = [
   "lazzartopalovic@gmail.com",
   "soowei@gohconsulting.com",
+  "aidanlukecordes@gmail.com",
 ];
 
 // Meetings recorded by or involving these people (matched by name) are skipped.
