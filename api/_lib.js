@@ -33,6 +33,25 @@ const EXCLUDED_TITLE_PHRASES = [
   "content call",
 ];
 
+// Generic/auto-generated titles that don't tell us if a call is a sales call or
+// an internal one. Calls with these titles get classified via transcript before
+// deciding (see classifyIsSalesCall). Case-insensitive substring match.
+const AMBIGUOUS_TITLE_PHRASES = [
+  "impromptu zoom meeting",
+  "zoom meeting",
+  "google meet",
+  "new meeting",
+];
+
+// Returns true if the title is generic/ambiguous and needs transcript classification.
+export function isAmbiguousTitle(payload) {
+  const title =
+    payload.meeting_title || payload.title || payload.recording?.title || "";
+  const lower = title.toLowerCase().trim();
+  if (!lower) return true; // no title at all -> ambiguous
+  return AMBIGUOUS_TITLE_PHRASES.some((p) => lower.includes(p));
+}
+
 // Meetings where any of these emails appear (as a participant or the recorder)
 // are skipped, regardless of the title.
 const EXCLUDED_EMAILS = [
@@ -177,6 +196,56 @@ const EXTRACTION_SCHEMA = `{
   "next_step": "string | null",
   "summary": "string (2-3 sentence neutral recap of what happened on the call)"
 }`;
+
+// For ambiguous-title calls, ask Claude (cheaply) whether this is an actual
+// sales/discovery call with an external prospect, or an internal/team call.
+// Returns true if it's a sales call (should be processed), false otherwise.
+// Uses the start + end of the transcript only, to keep it cheap.
+export async function classifyIsSalesCall(transcriptText) {
+  // Sample the opening and closing of the call — enough to tell sales vs internal.
+  const head = transcriptText.slice(0, 6000);
+  const tail =
+    transcriptText.length > 6000 ? transcriptText.slice(-4000) : "";
+  const sample = tail ? `${head}\n...\n${tail}` : head;
+
+  const system =
+    "You classify call transcripts. Answer with ONE word only: SALES or INTERNAL. " +
+    "SALES = a sales, discovery, or closing call where a salesperson is speaking " +
+    "with an external prospect/lead about buying a program or service. " +
+    "INTERNAL = a team meeting, huddle, coaching/onboarding call with an existing " +
+    "client, strategy chat, or any internal/ad-hoc call that is NOT selling to a " +
+    "new prospect. If unsure, answer INTERNAL. Reply with only SALES or INTERNAL.";
+
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001", // cheap/fast model for classification
+        max_tokens: 10,
+        system,
+        messages: [
+          { role: "user", content: `Transcript sample:\n"""\n${sample}\n"""` },
+        ],
+      }),
+    });
+    if (!resp.ok) return true; // on error, don't silently drop — let it through
+    const data = await resp.json();
+    const text = (data.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim()
+      .toUpperCase();
+    return !text.includes("INTERNAL");
+  } catch {
+    return true; // on failure, err toward letting it through rather than dropping
+  }
+}
 
 export async function extractWithClaude(transcriptText, hints) {
   const system =
@@ -410,7 +479,18 @@ export async function processMeeting(meeting) {
   if (shouldSkipMeeting(meeting)) {
     return { skipped: true };
   }
+
   const transcriptText = transcriptToText(meeting);
+
+  // For generic/ambiguous titles, classify via transcript before scoring, so
+  // unnamed internal calls don't post but real unnamed sales calls still do.
+  if (isAmbiguousTitle(meeting)) {
+    const isSales = await classifyIsSalesCall(transcriptText);
+    if (!isSales) {
+      return { skipped: true, reason: "classified_internal" };
+    }
+  }
+
   const hints = contextHints(meeting);
   const extracted = await extractWithClaude(transcriptText, hints);
   const discordPayload = buildDiscordPayload(extracted, hints);
