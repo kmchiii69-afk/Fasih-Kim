@@ -197,6 +197,39 @@ const EXTRACTION_SCHEMA = `{
   "summary": "string (2-3 sentence neutral recap of what happened on the call)"
 }`;
 
+// Cheap keyword check for clear close/payment language. If present, the call is
+// a sales call by definition and shouldn't be filtered as internal. Used as a
+// hard override before the (fuzzier) classifier on ambiguous-title calls.
+const CLOSE_SIGNAL_PHRASES = [
+  "payment plan",
+  "pay in full",
+  "paid in full",
+  "bank transfer",
+  "card details",
+  "send you the invoice",
+  "send the invoice",
+  "down payment",
+  "first payment",
+  "deposit",
+  "fanbasis",
+  "send you an invite",
+  "get you onboarded",
+  "onboarding call",
+  "split it",
+  "two splits",
+  "two payments",
+  "let's do it",
+  "welcome aboard",
+  "send the payment",
+  "sent the payment",
+  "join the discord",
+];
+
+export function hasCloseSignals(transcriptText) {
+  const lower = transcriptText.toLowerCase();
+  return CLOSE_SIGNAL_PHRASES.some((p) => lower.includes(p));
+}
+
 // For ambiguous-title calls, ask Claude (cheaply) whether this is an actual
 // sales/discovery call with an external prospect, or an internal/team call.
 // Returns true if it's a sales call (should be processed), false otherwise.
@@ -211,10 +244,14 @@ export async function classifyIsSalesCall(transcriptText) {
   const system =
     "You classify call transcripts. Answer with ONE word only: SALES or INTERNAL. " +
     "SALES = a sales, discovery, or closing call where a salesperson is speaking " +
-    "with an external prospect/lead about buying a program or service. " +
-    "INTERNAL = a team meeting, huddle, coaching/onboarding call with an existing " +
-    "client, strategy chat, or any internal/ad-hoc call that is NOT selling to a " +
-    "new prospect. If unsure, answer INTERNAL. Reply with only SALES or INTERNAL.";
+    "with an external prospect/lead about buying a program or service. This INCLUDES " +
+    "calls that close (payment taken, card details, bank transfer, joining a program). " +
+    "INTERNAL = a team meeting, huddle, internal strategy chat, or coaching call with " +
+    "an EXISTING client about delivery (not selling). " +
+    "IMPORTANT: If there is ANY indication of selling, pricing, or a prospect deciding " +
+    "whether to buy, answer SALES. Only answer INTERNAL if you are confident it is a " +
+    "team/internal call with no selling happening. When in doubt, answer SALES. " +
+    "Reply with only SALES or INTERNAL.";
 
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
@@ -485,9 +522,13 @@ export async function processMeeting(meeting) {
   // For generic/ambiguous titles, classify via transcript before scoring, so
   // unnamed internal calls don't post but real unnamed sales calls still do.
   if (isAmbiguousTitle(meeting)) {
-    const isSales = await classifyIsSalesCall(transcriptText);
-    if (!isSales) {
-      return { skipped: true, reason: "classified_internal" };
+    // Hard override: if the transcript clearly shows a close/payment, it's a
+    // sales call by definition — skip the classifier and always process it.
+    if (!hasCloseSignals(transcriptText)) {
+      const isSales = await classifyIsSalesCall(transcriptText);
+      if (!isSales) {
+        return { skipped: true, reason: "classified_internal" };
+      }
     }
   }
 
